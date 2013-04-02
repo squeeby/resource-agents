@@ -207,11 +207,36 @@ bind_tree ()
 
 unbind_tree ()
 {
-	if `mount | grep -q " on $rpcpipefs_umount_dir"`; then
-		umount -t rpc_pipefs $rpcpipefs_umount_dir
+	# If we can't unmount the directory and something is obviously not using it then we should try a lazy unmount. 
+	# This is probably dangerous, but given that we're probably in the middle of a failover anyway, we defintely want
+	# release the resource to avoid cascading errors. DRBD for instance. 
+	if `mount | grep -q "rpc_pipefs on /var/lib/nfs/rpc_pipefs"`; then
+		ocf_log info "Trying to umount /var/lib/nfs/rpc_pipefs..."
+		umount /var/lib/nfs/rpc_pipefs
+		if [ ! $? -eq 0 ]; then
+			ocf_log error "Could not unmount /var/lib/nfs/rpc_pipefs."
+			ocf_log info "Attempting a lazy unmount on /var/lib/nfs/rpc_pipefs..."
+			umount -l /var/lib/nfs/rpc_pipefs
+			if [ $? -eq 0 ]; then
+			        ocf_log info "Success!"
+			else
+			        ocf_log error "Failed!.. continuing anyway. This will probably end badly unless you have STONITH."
+			fi
+		fi
 	fi
 	if is_bound $fp /var/lib/nfs; then
+		ocf_log info "Trying to umount /var/lib/nfs..."
 		umount /var/lib/nfs
+		if [ ! $? -eq 0 ]; then
+			ocf_log error "Could not umount /var/lib/nfs."
+			ocf_log info "Attempting a lazy unmount on /var/lib/nfs..."
+			umount -l /var/lib/nfs
+			if [ $? -eq 0]; then
+			        ocf_log info "Success!"
+			else
+			        ocf_log error "Failed!.. continuing anyway. This will probably end badly unless you have STONITH."
+			fi
+		fi
 	fi
 }
 
